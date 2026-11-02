@@ -3,14 +3,19 @@ from flask import Flask, render_template_string, request, redirect, session
 import os, json
 from werkzeug.utils import secure_filename
 from datetime import datetime
+from functools import wraps
 
 app = Flask(__name__)
-app.secret_key = "fanora_v15_color"
+app.secret_key = os.environ.get("SECRET_KEY", "fanora_v15_color_GIZLI_KALMALI")
 app.config['UPLOAD_FOLDER'] = 'static/uploads'
 os.makedirs('static/uploads', exist_ok=True)
 os.makedirs('data', exist_ok=True)
 
-ADMINS = ["Admin"]
+# GÜVENLİK AYARLARI - Render Environment'dan geliyor
+ADMIN_USER = os.environ.get("ADMIN_USER", "Admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Fanora123!Degistir")
+ADMINS = [ADMIN_USER]
+
 posts=[]; profiles={}; follows={}; users={}; blocks={}; messages=[]; notifications={}
 
 def time_ago(s):
@@ -24,6 +29,15 @@ def time_ago(s):
     except: return ""
 
 def is_admin(u): return u in ADMINS
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if "user" not in session or not is_admin(session["user"]):
+            return "<h1 style='background:#0a0a0f;color:white;padding:40px;font-family:sans-serif'>⛔ Yetkin yok!<br>Admin değilsin. <a href='/' style='color:#a855f7'>Ana Sayfa</a></h1>", 403
+        return f(*args, **kwargs)
+    return decorated
+
 def get_followers(u): return sum(1 for x in follows.values() if u in x)
 def get_following(u): return len(follows.get(u, set()))
 def add_notif(to_user, text):
@@ -69,9 +83,10 @@ def load_all():
         try:
             with open("data/notifs.json","r",encoding="utf-8") as f: notifications=json.load(f)
         except: pass
-    if "Admin" not in users: users["Admin"]="Admin"
-    if "Admin" not in profiles: profiles["Admin"]=type('obj',(object,),{'avatar':None,'banner':None,'bio':"Fanora kurucusu",'color':"#a855f7",'effect':"glow",'username':"Admin"})()
-    if "Admin" not in follows: follows["Admin"]=set()
+    if ADMIN_USER not in users: users[ADMIN_USER]=ADMIN_PASSWORD
+    else: users[ADMIN_USER]=ADMIN_PASSWORD
+    if ADMIN_USER not in profiles: profiles[ADMIN_USER]=type('obj',(object,),{'avatar':None,'banner':None,'bio':"Fanora kurucusu",'color':"#a855f7",'effect':"glow",'username':ADMIN_USER})()
+    if ADMIN_USER not in follows: follows[ADMIN_USER]=set()
     save_all()
 load_all()
 
@@ -115,7 +130,6 @@ input[type="color"]{height:50px;padding:4px;cursor:pointer}
 .chat-bubble.other{background:#222;color:white;margin-right:auto;border-bottom-left-radius:4px}
 .tag{display:inline-block;background:#1e1e26;border:1px solid #333;padding:6px 12px;border-radius:20px;font-size:12px;margin:4px;color:#aaa;text-decoration:none}
 .tag:hover{color:white;border-color:#a855f7}
-/* İSİM EFEKTLERİ */
 .name-glow{ text-shadow: 0 0 12px currentColor, 0 0 20px currentColor; }
 .name-neon{ text-shadow: 0 0 5px #fff, 0 0 10px currentColor, 0 0 20px currentColor, 0 0 35px currentColor; font-weight:900; letter-spacing:0.5px; }
 .name-shadow{ text-shadow: 4px 4px 0px #000, 0 0 12px currentColor; }
@@ -131,10 +145,10 @@ MAIN = BASE + """
     <a href="/inbox" style="color:#888;text-decoration:none;font-size:13px">Mesajlar</a>
     <a href="/notifications" style="color:#888;text-decoration:none;font-size:13px">Bildirimler {% if unread %}<span class="notif-dot"></span>{% endif %}</a>
     <a href="/profile/{{session.user}}" style="color:#888;text-decoration:none;font-size:13px">Profil</a>
+    {% if is_admin(session.user) %}<a href="/admin" style="color:#ff5555;text-decoration:none;font-size:13px">ADMIN</a>{% endif %}
     <a href="/logout" style="color:#ff5555;text-decoration:none;font-size:13px">Çıkış</a>
   </div>
 </div>
-
 <div style="max-width:640px;margin:0 auto;padding:0 14px">
   {% if page=='home' %}
   <div class="card" style="display:flex;gap:10px;align-items:center">
@@ -143,12 +157,10 @@ MAIN = BASE + """
     <form method="POST" enctype="multipart/form-data" style="display:flex;gap:6px;flex:1;margin:0"><input name="fandom" placeholder="#etiket" style="width:90px;height:40px;margin:0"><input name="text" placeholder="Ne düşünüyorsun?" style="flex:1;height:40px;margin:0" required><label style="background:#222;padding:10px;border-radius:10px;cursor:pointer">📎<input type="file" name="image" accept="image/*" style="display:none"></label><button class="btn" style="width:90px;height:40px;margin:0">Paylaş</button></form>
   </div>
   {% endif %}
-
   {% if page=='explore' %}
     <div class="card"><b>Keşfet</b><div style="margin-top:10px">{% for t in tags %}<a href="/explore?tag={{t}}" class="tag">#{{t}}</a>{% endfor %}{% if not tags %}<span style="color:#666">Henüz etiket yok</span>{% endif %}</div></div>
     {% if current_tag %}<div class="card" style="background:#1e1e26">#{{current_tag}} - <a href="/explore" style="color:#a855f7">Temizle</a></div>{% endif %}
   {% endif %}
-
   {% if page=='profile' %}
     {% set pu = profiles.get(user) %}
     <div class="banner-box">{% if pu and pu.banner %}<img src="/{{pu.banner}}">{% endif %}</div>
@@ -191,7 +203,6 @@ MAIN = BASE + """
     <script>function toggleEdit(){var b=document.getElementById('editBox'),t=document.getElementById('editToggle');if(b.style.display==='none'){b.style.display='block';t.innerText='Kapat ✕'}else{b.style.display='none';t.innerText='Profili Düzenle + İsim Rengi'}}</script>
     {% endif %}
   {% endif %}
-
   {% if page=='chat' %}
     <div class="card" style="display:flex;gap:10px;align-items:center"><a href="/profile/{{chat_user}}" style="text-decoration:none;color:white"><b>@{{chat_user}}</b></a></div>
     <div style="height:60vh;overflow-y:auto;padding:10px 0" id="chatBox">
@@ -200,26 +211,22 @@ MAIN = BASE + """
     <form method="POST" action="/send_message/{{chat_user}}" style="display:flex;gap:8px;position:sticky;bottom:10px;background:#0a0a0f;padding:10px 0"><input name="text" placeholder="Mesaj yaz..." required style="flex:1;margin:0"><button class="btn" style="width:80px;margin:0">Gönder</button></form>
     <script>var cb=document.getElementById('chatBox');cb.scrollTop=cb.scrollHeight;</script>
   {% endif %}
-
   {% if page=='inbox' %}
     <div class="card"><b>Mesajlar</b></div>
     {% for u in inbox_users %}<a href="/chat/{{u}}" style="text-decoration:none"><div class="card" style="display:flex;gap:10px;align-items:center"><img class="avatar mini" src="/{{profiles.get(u).avatar if profiles.get(u) and profiles.get(u).avatar else ''}}"><b style="color:white;font-size:13px">@{{u}}</b><span style="margin-left:auto;color:#666;font-size:11px">→</span></div></a>{% endfor %}
     {% if not inbox_users %}<p style="color:#666;text-align:center">Henüz mesaj yok</p>{% endif %}
   {% endif %}
-
   {% if page=='notifications' %}
     <div class="card"><b>Bildirimler</b></div>
     {% for n in notifs %}<div class="card" style="font-size:13px">{{n.text}}<div class="time" style="margin-top:6px">{{ time_ago(n.created_at) }}</div></div>{% endfor %}
     {% if not notifs %}<p style="color:#666;text-align:center">Bildirim yok</p>{% endif %}
   {% endif %}
-
   {% for p in posts %}
     {% set pa = profiles.get(p.author) %}
     {% set global_i = all_posts.index(p) if p in all_posts else loop.index0 %}
     <div class="post"><div style="display:flex;gap:10px;align-items:center"><img class="avatar mini" src="/{{pa.avatar if pa and pa.avatar else ''}}"><b style="font-size:13px; color:{{pa.color if pa else '#fff'}}" class="name-{{pa.effect if pa else 'normal'}}"><a href="/profile/{{p.author}}" style="color:inherit;text-decoration:none">@{{pa.username if pa else p.author}}</a>{% if is_admin(p.author) %}<span class="admin-badge">ADMIN</span>{% endif %}</b><span class="time"> - {{ time_ago(p.created_at) }}</span></div><div style="margin:10px 0 0 46px;font-size:14px">{{p.text}} {% if p.fandom %}<a href="/explore?tag={{p.fandom}}" style="color:#a855f7;text-decoration:none;font-size:12px">#{{p.fandom}}</a>{% endif %}</div>{% if p.image %}<img src="/{{p.image}}" class="post-img" style="margin-left:46px;width:calc(100% - 46px)">{% endif %}<div style="margin:10px 0 0 46px;font-size:12px"><a href="/like/{{global_i}}?next={{request.path}}" style="color:#ff4d6d;text-decoration:none">❤️ {{p.likes|length}}</a> <a href="/delete/{{global_i}}" style="color:#555;text-decoration:none;margin-left:14px">Sil</a></div></div>
   {% endfor %}
 </div>
-
 <div id="followModal" class="modal-bg" onclick="if(event.target==this)closeFollow()"><div class="modal-box"><div class="modal-head"><b id="followTitle">Takipçiler</b><button class="modal-close" onclick="closeFollow()">✕</button></div><div id="followList"></div></div></div>
 <script>
 var followsData = {{ follows_json|safe }};
@@ -239,7 +246,7 @@ LOGIN_HTML = """<style>body{background:#0a0a0f;color:white;font-family:sans-seri
 def register():
     if request.method=="POST":
         u=request.form.get("username","").strip(); p=request.form.get("password","").strip()
-        if u in users: return render_template_string(LOGIN_HTML, error="Bu kullanıcı adı zaten var")
+        if u in users or u.lower() == ADMIN_USER.lower(): return render_template_string(LOGIN_HTML, error="Bu kullanıcı adı alınamaz")
         users[u]=p; profiles[u]=type('obj',(object,),{'avatar':None,'banner':None,'bio':"",'color':"#a855f7",'effect':"normal",'username':u})(); follows[u]=set(); blocks[u]=set(); notifications[u]=[]; save_all(); session["user"]=u; return redirect("/")
     return render_template_string(LOGIN_HTML, error=None)
 
@@ -367,5 +374,27 @@ def delete(id):
     if 0 <= id < len(posts) and (posts[id]["author"]==session["user"] or is_admin(session["user"])): posts.pop(id); save_all()
     return redirect("/")
 
+@app.route("/admin")
+@admin_required
+def admin_panel():
+    html = f"""
+    <html><head><style>body{{background:#0a0a0f;color:white;font-family:sans-serif;padding:20px}} 
+    .card{{background:#14141c;border:1px solid #222;padding:16px;border-radius:14px;margin:10px 0}}
+    a{{color:#a855f7}} .danger{{color:#ff5555}}
+    </style></head><body>
+    <h1>🔒 Fanora Admin Panel</h1>
+    <p>Hoşgeldin {session['user']} - Burası sadece sana özel, kimse giremez!</p>
+    <a href="/">← Ana Sayfa</a>
+    <div class="card"><b>İstatistikler</b><br>
+    Toplam Kullanıcı: {len(users)}<br>
+    Toplam Post: {len(posts)}<br>
+    Toplam Mesaj: {len(messages)}</div>
+    <div class="card"><b>Kullanıcılar</b><br>{'<br>'.join([f"{u} {'(ADMIN)' if is_admin(u) else ''}" for u in users.keys()])}</div>
+    <div class="card"><b>Son Postlar</b><br>{''.join([f"<div style='border-bottom:1px solid #222;padding:6px 0'>{p['author']}: {p['text'][:50]} <a class='danger' href='/delete/{i}'>[SİL]</a></div>" for i,p in enumerate(posts[:20])])}</div>
+    </body></html>
+    """
+    return html
+
 if __name__=="__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
